@@ -12,7 +12,8 @@ import {
   FiSettings,
   FiLogOut,
   FiCheckSquare,
-  FiBarChart2 // Nouvelle icône pour Analytics
+  FiBarChart2,
+  FiMail // Nouvelle icône pour les communications
 } from 'react-icons/fi';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -45,9 +46,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <FiHome className="text-indigo-400 group-hover:scale-110 transition-transform"/> Tableau de bord
           </Link>
 
-          {/* AJOUT DE L'ONGLET ANALYTICS ICI */}
           <Link href="/dashboard/analytics" className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 transition-all font-bold text-slate-300 hover:text-white group">
-            <FiBarChart2 className="text-indigo-400 group-hover:scale-110 transition-transform"/> Statistiques (Analytics)
+            <FiBarChart2 className="text-indigo-400 group-hover:scale-110 transition-transform"/> Statistiques
+          </Link>
+
+          {/* NOUVEL ONGLET : COMMUNICATIONS */}
+          <Link href="/dashboard/communications" className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 transition-all font-bold text-slate-300 hover:text-white group">
+            <FiMail className="text-indigo-400 group-hover:scale-110 transition-transform"/> Communications
           </Link>
 
           <Link href="/dashboard/tasks" className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 transition-all font-bold text-slate-300 hover:text-white group">
@@ -79,7 +84,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </nav>
 
-        {/* Footer Sidebar avec Logout */}
+        {/* Footer Sidebar */}
         <div className="mt-auto pt-6 border-t border-slate-800 space-y-2">
           <Link href="/dashboard/settings" className="flex items-center gap-3 p-3 text-slate-500 hover:text-white transition-colors font-bold text-sm">
             <FiSettings /> Paramètres
