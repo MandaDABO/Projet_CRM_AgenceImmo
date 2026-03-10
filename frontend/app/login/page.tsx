@@ -1,4 +1,4 @@
-'use client'; // Obligatoire pour utiliser useState et les interactions
+'use client';
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -13,52 +13,39 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
 
-    // Tentative de connexion via Supabase Auth (Gère le JWT automatiquement)
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      alert("Erreur d'authentification : " + error.message);
+      alert("Email ou mot de passe incorrect");
     } else {
-      // Redirection vers le tableau de bord en cas de succès
       router.push('/dashboard');
     }
     setLoading(false);
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <div className="p-8 bg-white shadow-2xl rounded-xl w-full max-w-md border border-slate-200">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+      <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-slate-100">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-blue-900">ImmoCRM</h1>
-          <p className="text-slate-500 mt-2">Gestion d'agence immobilière</p>
+          <h1 className="text-4xl font-black text-indigo-600 tracking-tighter">Immo<span className="text-slate-800">CRM</span></h1>
+          <p className="text-slate-400 font-medium mt-2">Bienvenue sur votre espace</p>
         </div>
-        
+
         <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Email professionnel</label>
-            <input 
-              type="email" 
-              required
-              className="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Mot de passe</label>
-            <input 
-              type="password" 
-              required
-              className="mt-1 w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <button 
-            disabled={loading}
-            className="w-full bg-blue-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-800 transition duration-200 disabled:bg-slate-400"
-          >
-            {loading ? 'Connexion en cours...' : 'Se connecter'}
+          <input required type="email" placeholder="Email" className="w-full p-4 bg-slate-50 border rounded-2xl outline-indigo-500 font-medium"
+            onChange={(e) => setEmail(e.target.value)} />
+          
+          <input required type="password" placeholder="Mot de passe" className="w-full p-4 bg-slate-50 border rounded-2xl outline-indigo-500 font-medium"
+            onChange={(e) => setPassword(e.target.value)} />
+
+          <button disabled={loading} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition shadow-xl shadow-indigo-100">
+            {loading ? 'Connexion...' : 'SE CONNECTER'}
           </button>
         </form>
+        
+        <p className="text-center mt-6 text-sm text-slate-500">
+          Pas encore de compte ? <button onClick={() => router.push('/register')} className="text-indigo-600 font-bold hover:underline">S'inscrire</button>
+        </p>
       </div>
     </div>
   );

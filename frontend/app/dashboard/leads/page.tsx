@@ -1,37 +1,50 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { FiPlus, FiMapPin, FiFileText, FiCheckCircle } from 'react-icons/fi';
 
 export default function LeadsPage() {
+  const router = useRouter();
   const [leads, setLeads] = useState<any[]>([]);
-  const [contacts, setContacts] = useState<any[]>([]);
+  const [invoicedIds, setInvoicedIds] = useState<string[]>([]);
+  const [vendeursDispo, setVendeursDispo] = useState<any[]>([]);
+  const [acheteursDispo, setAcheteursDispo] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Liste harmonisée avec tes statistiques (Analytics)
-  const statuts = ['Prospect', 'Qualification', 'Proposition envoyée', 'Négociation', 'Gagné', 'Perdu'];
+  const statuts = ['Nouveau', 'Prospect', 'Qualification', 'Négociation', 'Gagné', 'Perdu'];
   const categories = ['Appartement', 'Maison', 'Terrain', 'Local Commercial', 'Parking'];
-  const commerciaux = ['Manda', 'Mariama', 'Jean', 'Sophie']; // Liste à adapter
 
-  // États pour le nouveau lead
   const [titre, setTitre] = useState('');
   const [montant, setMontant] = useState('');
-  const [contactId, setContactId] = useState('');
-  const [statut, setStatut] = useState('Prospect');
+  const [vendeurId, setVendeurId] = useState('');
+  const [acheteurId, setAcheteurId] = useState('');
   const [ville, setVille] = useState('Nanterre');
   const [categorie, setCategorie] = useState('Appartement');
-  const [commercial, setCommercial] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setCurrentUser(user);
+
     const { data: leadsData } = await supabase
       .from('leads')
-      .select('*, contacts(nom, prenom)')
+      .select(`*, vendeur:contact_id(nom, prenom), acheteur:acheteur_id(nom, prenom)`)
+      .eq('commercial_id', user.id)
       .order('created_at', { ascending: false });
-    
-    const { data: contactsData } = await supabase.from('contacts').select('id, nom, prenom');
+
+    const { data: invoicesData } = await supabase.from('invoices').select('lead_id');
+    const ids = invoicesData?.map(inv => inv.lead_id) || [];
+    setInvoicedIds(ids);
+
+    const { data: vData } = await supabase.from('contacts').select('id, nom, prenom').eq('type', 'Vendeur');
+    const { data: aData } = await supabase.from('contacts').select('id, nom, prenom').eq('type', 'Acheteur');
 
     if (leadsData) setLeads(leadsData);
-    if (contactsData) setContacts(contactsData);
+    if (vData) setVendeursDispo(vData);
+    if (aData) setAcheteursDispo(aData);
     setLoading(false);
   };
 
@@ -39,108 +52,172 @@ export default function LeadsPage() {
 
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // On prépare l'objet avec les nouveaux champs pour les stats
-    const { error } = await supabase.from('leads').insert([
-      { 
-        titre, 
-        valeur_estimee: parseFloat(montant), // On utilise le nom de colonne de la DB
-        contact_id: contactId, 
-        statut,
-        ville,
-        categorie_service: categorie, // Pour le graphique "Par type de bien"
-        commercial_nom: commercial,   // Pour le graphique "Par commercial"
-        date_cloture: statut === 'Gagné' ? new Date().toISOString() : null
-      }
-    ]);
+    if (!currentUser || !vendeurId) return;
 
-    if (error) {
-        console.error(error);
-        alert("Erreur lors de la création : " + error.message);
-    } else {
-      setTitre(''); setMontant(''); setContactId(''); setStatut('Prospect');
+    const payload = { 
+      titre, 
+      valeur_estimee: parseFloat(montant) || 0,
+      contact_id: vendeurId,
+      acheteur_id: acheteurId || null,
+      statut: 'Prospect', 
+      ville,
+      categorie_service: categorie,
+      commercial_id: currentUser.id,
+      commercial_nom: currentUser.user_metadata?.full_name || currentUser.email
+    };
+
+    const { error } = await supabase.from('leads').insert([payload]);
+    if (!error) {
+      setTitre(''); setMontant(''); setVendeurId(''); setAcheteurId('');
       fetchData();
     }
   };
 
-  return (
-    <div className="p-8 max-w-full bg-slate-50 min-h-screen">
-      <h1 className="text-3xl font-bold mb-8 text-slate-800">Gestion des Opportunités</h1>
+  const handleGenerateInvoice = async (lead: any) => {
+    if (invoicedIds.includes(lead.id)) return;
+    const commission = (lead.valeur_estimee || 0) * 0.05;
+    const payload = {
+      lead_id: lead.id,
+      commercial_id: currentUser.id,
+      vendeur_nom: `${lead.vendeur?.prenom || ''} ${lead.vendeur?.nom || 'Inconnu'}`,
+      acheteur_nom: lead.acheteur ? `${lead.acheteur?.prenom || ''} ${lead.acheteur?.nom || ''}` : "Non spécifié",
+      projet_nom: lead.titre,
+      montant_total: lead.valeur_estimee,
+      commission_agence: commission
+    };
 
-      {/* Formulaire d'ajout enrichi */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-10">
-        <h2 className="text-lg font-bold mb-4 text-slate-700">🚀 Nouvelle Affaire</h2>
-        <form onSubmit={handleCreateLead} className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          
+    const { error } = await supabase.from('invoices').insert([payload]);
+    if (!error) {
+      router.push('/dashboard/finances');
+    }
+  };
+
+  const onDragStart = (e: React.DragEvent, leadId: string) => {
+    e.dataTransfer.setData('leadId', leadId);
+  };
+
+  const onDrop = async (e: React.DragEvent, newStatut: string) => {
+    e.preventDefault();
+    const leadId = e.dataTransfer.getData('leadId');
+    const { error } = await supabase.from('leads').update({ statut: newStatut }).eq('id', leadId);
+    if (!error) fetchData();
+  };
+
+  return (
+    <div className="p-8 bg-slate-50 min-h-screen">
+      <div className="mb-10">
+        <h1 className="text-4xl font-black text-slate-900 tracking-tight underline decoration-indigo-500 decoration-8 uppercase">Pipeline</h1>
+        <p className="text-slate-700 font-bold mt-2 italic">Commercial : {currentUser?.email}</p>
+      </div>
+
+      {/* FORMULAIRE - Texte forcé en NOIR */}
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 mb-12">
+        <h2 className="text-xl font-black mb-6 flex items-center gap-2 text-slate-900">
+          <FiPlus className="p-1 bg-indigo-100 text-indigo-600 rounded-lg"/> NOUVEAU DOSSIER
+        </h2>
+        <form onSubmit={handleCreateLead} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <input 
-            className="p-2 border rounded-lg" placeholder="Nom du projet (ex: Vente T3)"
-            value={titre} onChange={(e) => setTitre(e.target.value)} required 
+            className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium focus:ring-2 focus:ring-indigo-500 outline-none" 
+            placeholder="Nom du projet" 
+            value={titre} 
+            onChange={(e) => setTitre(e.target.value)} 
+            required 
           />
-          
           <input 
-            className="p-2 border rounded-lg" type="number" placeholder="Budget / Prix (€)"
-            value={montant} onChange={(e) => setMontant(e.target.value)} required 
+            className="p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-indigo-600 focus:ring-2 focus:ring-indigo-500 outline-none" 
+            type="number" 
+            placeholder="Prix estimé (€)" 
+            value={montant} 
+            onChange={(e) => setMontant(e.target.value)} 
+            required 
           />
 
           <select 
-            className="p-2 border rounded-lg bg-white"
-            value={contactId} onChange={(e) => setContactId(e.target.value)} required
+            className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium focus:ring-2 focus:ring-indigo-500 outline-none" 
+            value={vendeurId} 
+            onChange={(e) => setVendeurId(e.target.value)} 
+            required
           >
-            <option value="">👤 Client...</option>
-            {contacts.map(c => (
-              <option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>
-            ))}
+            <option value="" className="text-slate-400">-- Sélectionner Vendeur --</option>
+            {vendeursDispo.map(v => <option key={v.id} value={v.id} className="text-slate-900">{v.prenom} {v.nom}</option>)}
           </select>
 
-          <select className="p-2 border rounded-lg bg-white" value={statut} onChange={(e) => setStatut(e.target.value)}>
-            {statuts.map(s => <option key={s} value={s}>{s}</option>)}
+          <select 
+            className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium focus:ring-2 focus:ring-indigo-500 outline-none" 
+            value={acheteurId} 
+            onChange={(e) => setAcheteurId(e.target.value)}
+          >
+            <option value="" className="text-slate-400">-- Acheteur potentiel --</option>
+            {acheteursDispo.map(a => <option key={a.id} value={a.id} className="text-slate-900">{a.prenom} {a.nom}</option>)}
           </select>
 
           <input 
-            className="p-2 border rounded-lg" placeholder="Ville"
-            value={ville} onChange={(e) => setVille(e.target.value)} 
+            className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 font-medium focus:ring-2 focus:ring-indigo-500 outline-none" 
+            placeholder="Ville" 
+            value={ville} 
+            onChange={(e) => setVille(e.target.value)} 
           />
-
-          <select className="p-2 border rounded-lg bg-white" value={categorie} onChange={(e) => setCategorie(e.target.value)}>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-
-          <select className="p-2 border rounded-lg bg-white" value={commercial} onChange={(e) => setCommercial(e.target.value)} required>
-            <option value="">Assigner à...</option>
-            {commerciaux.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-
-          <button type="submit" className="bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors">
-            Créer l'opportunité
+          
+          <button type="submit" className="bg-slate-900 text-white p-4 rounded-2xl font-black hover:bg-indigo-600 transition-all shadow-lg">
+            CRÉER LE LEAD
           </button>
         </form>
       </div>
 
       {/* KANBAN */}
-      <div className="flex gap-6 overflow-x-auto pb-8">
+      <div className="flex gap-6 overflow-x-auto pb-10">
         {statuts.map(s => (
-          <div key={s} className="min-w-[300px] flex-shrink-0">
-            <div className="flex justify-between items-center mb-4 px-2">
-              <h3 className="font-bold text-slate-700">{s}</h3>
-              <span className="bg-slate-200 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">
-                {leads.filter(l => l.statut === s).length}
-              </span>
-            </div>
+          <div key={s} onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, s)} 
+            className="min-w-[340px] bg-slate-200/40 p-5 rounded-[3rem] border border-slate-200/50">
+            <h3 className="font-black text-slate-600 uppercase text-[11px] mb-6 px-4 tracking-widest">{s}</h3>
+            <div className="space-y-5 min-h-[500px]">
+              {leads.filter(l => l.statut === s).map(lead => {
+                const isAlreadyInvoiced = invoicedIds.includes(lead.id);
+                return (
+                  <div key={lead.id} draggable onDragStart={(e) => onDragStart(e, lead.id)}
+                    className="bg-white p-6 rounded-[2.2rem] shadow-sm border border-white hover:shadow-xl transition-all cursor-grab active:cursor-grabbing">
+                    
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full uppercase">{lead.categorie_service}</span>
+                      <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1"><FiMapPin/> {lead.ville}</span>
+                    </div>
+                    
+                    <h4 className="font-bold text-slate-900 text-lg mb-2 italic">{lead.titre}</h4>
+                    <div className="text-2xl font-black text-slate-900 mb-4">{lead.valeur_estimee?.toLocaleString()} €</div>
+                    
+                    {lead.statut === 'Gagné' && (
+                      <button 
+                        disabled={isAlreadyInvoiced}
+                        onClick={() => handleGenerateInvoice(lead)}
+                        className={`w-full mb-4 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-lg ${
+                          isAlreadyInvoiced 
+                          ? 'bg-slate-100 text-slate-500 cursor-not-allowed border border-slate-200 shadow-none' 
+                          : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
+                        }`}
+                      >
+                        {isAlreadyInvoiced ? (
+                          <><FiCheckCircle /> FACTURE GÉNÉRÉE</>
+                        ) : (
+                          <><FiFileText /> GÉNÉRER FACTURE</>
+                        )}
+                      </button>
+                    )}
 
-            <div className="space-y-4">
-              {leads.filter(l => l.statut === s).map(lead => (
-                <div key={lead.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start mb-2">
-                    <p className="font-bold text-slate-800 leading-tight">{lead.titre}</p>
-                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500 uppercase">{lead.ville}</span>
+                    <div className="pt-4 border-t border-slate-100 space-y-2 text-[10px] font-bold text-slate-900">
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-[9px]">V</div>
+                        {lead.vendeur?.prenom} {lead.vendeur?.nom}
+                      </div>
+                      {lead.acheteur && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-black text-[9px]">A</div>
+                          {lead.acheteur?.prenom} {lead.acheteur?.nom}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-indigo-600 font-black text-lg mb-3">{lead.valeur_estimee?.toLocaleString()} €</p>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-3 border-t">
-                    <span>👤 {lead.contacts?.nom}</span>
-                    <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{lead.commercial_nom}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

@@ -5,128 +5,127 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import { FiPlus, FiClock, FiCheckCircle, FiCircle, FiAlertCircle } from 'react-icons/fi';
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  
+  // États du formulaire
   const [titre, setTitre] = useState('');
   const [date, setDate] = useState('');
   const [type, setType] = useState('Appel');
 
-  const fetchTasks = async () => {
-    const { data } = await supabase
+  const fetchTasks = async (uid: string) => {
+    const { data, error } = await supabase
       .from('tasks')
       .select('*, contacts(nom, prenom)')
+      .eq('commercial_id', uid)
       .order('date_echeance', { ascending: true });
+    
     if (data) setTasks(data);
   };
 
-  useEffect(() => { 
-    fetchTasks();
-    // Demander la permission pour les notifications dès le chargement
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+        fetchTasks(user.id);
+      }
+    };
+    init();
   }, []);
 
-  const notifyUser = (taskTitle: string) => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("Nouvelle échéance", {
-        body: `Rappel créé : ${taskTitle}`,
-      });
+  // FONCTION CLÉ : Met à jour le statut "est_completee"
+  const handleToggleStatus = async (taskId: string, currentStatus: boolean) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({ est_completee: !currentStatus })
+      .eq('id', taskId);
+
+    if (!error && userId) {
+      fetchTasks(userId); // Recharge la liste pour voir le changement
     }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userId) return;
     const { error } = await supabase.from('tasks').insert([
-      { titre, date_echeance: date, type }
+      { titre, date_echeance: date, type, commercial_id: userId, est_completee: false }
     ]);
     if (!error) {
-      notifyUser(titre); // Notifie l'utilisateur
       setTitre(''); setDate('');
-      fetchTasks();
+      fetchTasks(userId);
     }
   };
 
+  // Configuration du calendrier : les tâches finies apparaissent en gris/barré
   const calendarEvents = tasks.map(t => ({
     id: t.id,
-    title: `${t.type}: ${t.titre}`,
+    title: `${t.est_completee ? '✅ ' : ''}${t.titre}`,
     start: t.date_echeance,
-    backgroundColor: t.type === 'Appel' ? '#3b82f6' : t.type === 'Rendez-vous' ? '#10b981' : '#f59e0b',
-    borderColor: 'transparent'
+    backgroundColor: t.est_completee ? '#cbd5e1' : (t.type === 'Appel' ? '#3b82f6' : '#10b981'),
+    borderColor: 'transparent',
+    extendedProps: { est_completee: t.est_completee }
   }));
 
-  // CALCUL DES TÂCHES URGENTES (Avant le return)
-  const urgentTasks = tasks.filter(t => {
-    const isToday = new Date(t.date_echeance).toDateString() === new Date().toDateString();
-    const isPast = new Date(t.date_echeance) < new Date();
-    return (isToday || isPast) && !t.est_completee;
-  });
-
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8 text-slate-800">Agenda & Tâches</h1>
-
-      {/* 2. ALERTE TÂCHES URGENTES (Placée ici pour être visible) */}
-      {urgentTasks.length > 0 && (
-        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 flex items-center justify-between rounded-r-lg shadow-sm">
-          <div className="flex items-center">
-            <span className="text-xl mr-3">⏰</span>
-            <div>
-              <p className="font-bold">Attention !</p>
-              <p className="text-sm">Vous avez {urgentTasks.length} tâche(s) en retard ou pour aujourd'hui.</p>
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="p-8 max-w-7xl mx-auto bg-slate-50 min-h-screen">
+      <h1 className="text-3xl font-black mb-8 text-slate-800">AGENDA & <span className="text-blue-600">SUIVI</span></h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* COLONNE GAUCHE */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white p-4 rounded-xl shadow-sm border">
-            <h2 className="font-bold mb-4">Nouvelle Tâche</h2>
-            <form onSubmit={handleAddTask} className="space-y-3">
-              <input 
-                className="w-full p-2 border rounded" placeholder="Quoi faire ?"
-                value={titre} onChange={(e) => setTitre(e.target.value)} required 
-              />
-              <input 
-                className="w-full p-2 border rounded" type="datetime-local"
-                value={date} onChange={(e) => setDate(e.target.value)} required 
-              />
-              <select className="w-full p-2 border rounded bg-white" value={type} onChange={(e) => setType(e.target.value)}>
-                <option value="Appel">📞 Appel</option>
-                <option value="Rendez-vous">🤝 Rendez-vous</option>
-                <option value="Rappel">🔔 Rappel</option>
-              </select>
-              <button className="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700">Ajouter</button>
+          
+          {/* FORMULAIRE D'AJOUT */}
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+            <h2 className="font-bold mb-4 text-slate-800">Nouvelle mission</h2>
+            <form onSubmit={handleAddTask} className="space-y-4">
+              <input className="w-full p-3 bg-slate-50 border rounded-xl" placeholder="Titre..." value={titre} onChange={(e) => setTitre(e.target.value)} required />
+              <input className="w-full p-3 bg-slate-50 border rounded-xl text-sm" type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} required />
+              <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">AJOUTER</button>
             </form>
           </div>
 
-          <div className="bg-white p-4 rounded-xl shadow-sm border max-h-[400px] overflow-y-auto">
-            <h2 className="font-bold mb-4">À faire</h2>
-            {tasks.filter(t => !t.est_completee).map(t => (
-              <div key={t.id} className="p-3 border-b last:border-0 text-sm hover:bg-slate-50">
-                <p className="font-semibold text-slate-800">{t.titre}</p>
-                <p className="text-xs text-slate-500">{new Date(t.date_echeance).toLocaleString()}</p>
-              </div>
-            ))}
+          {/* LISTE DES TÂCHES AVEC UPDATE DE STATUT */}
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+            <h2 className="font-bold mb-4 text-slate-800">Liste des tâches</h2>
+            <div className="space-y-3">
+              {tasks.map(t => (
+                <div 
+                  key={t.id} 
+                  onClick={() => handleToggleStatus(t.id, t.est_completee)}
+                  className={`flex items-center gap-3 p-4 rounded-2xl border cursor-pointer transition-all ${t.est_completee ? 'bg-slate-50 border-transparent opacity-60' : 'bg-white border-slate-100 hover:border-blue-200'}`}
+                >
+                  {t.est_completee ? 
+                    <FiCheckCircle className="text-emerald-500 flex-shrink-0" size={20} /> : 
+                    <FiCircle className="text-slate-300 flex-shrink-0" size={20} />
+                  }
+                  <div className="overflow-hidden">
+                    <p className={`font-bold text-sm truncate ${t.est_completee ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                      {t.titre}
+                    </p>
+                    <p className="text-[10px] text-slate-400 uppercase font-black tracking-tighter">
+                      {new Date(t.date_echeance).toLocaleString('fr-FR', {day: 'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* COLONNE DROITE : CALENDRIER */}
-        <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border">
+        {/* CALENDRIER */}
+        <div className="lg:col-span-3 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
           <FullCalendar
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="dayGridMonth"
-            headerToolbar={{
-              left: 'prev,next today',
-              center: 'title',
-              right: 'dayGridMonth,timeGridWeek,timeGridDay'
-            }}
             events={calendarEvents}
             locale="fr"
             height="700px"
+            // Interaction : Cliquer sur une tâche du calendrier change aussi son statut !
+            eventClick={(info) => handleToggleStatus(info.event.id, info.event.extendedProps.est_completee)}
           />
         </div>
       </div>
