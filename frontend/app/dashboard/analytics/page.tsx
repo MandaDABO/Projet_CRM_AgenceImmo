@@ -40,7 +40,14 @@ export default function AnalyticsPage() {
     setIsClient(true);
     const fetchStats = async () => {
       // 1. Récupération groupée des données
-      const { data: leadsData } = await supabase.from('leads').select('*, profiles(full_name)');
+      // Remplace ta ligne 31 par celle-ci :
+      const { data: leadsData } = await supabase
+        .from('leads')
+        .select(`
+          *,
+          profiles(full_name),
+          contacts!leads_acheteur_id_fkey(nom, prenom)
+        `);
       const { data: invoicesData } = await supabase.from('invoices').select('*');
       
       if (leadsData) {
@@ -232,16 +239,24 @@ export default function AnalyticsPage() {
       )}
 
       {/* --- AUTRES ONGLETS (Simplifiés ici pour la place) --- */}
-      {activeTab === 'clients' && (
+{activeTab === 'clients' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-4">
           <ChartContainer title="Villes (7.2)">
-            <PieChart><Pie data={stats.statsVille} dataKey="value" nameKey="name" outerRadius={100} label>{stats.statsVille.map((_:any,i:number)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip/><Legend/></PieChart>
+            <PieChart>
+              <Pie data={stats.statsVille} dataKey="value" nameKey="name" outerRadius={100} label>
+                {stats.statsVille.map((_:any,i:number)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+              </Pie>
+              <Tooltip/><Legend/>
+            </PieChart>
           </ChartContainer>
+          
           <div className="bg-white p-8 rounded-3xl border border-slate-100">
             <h2 className="text-xl font-bold mb-6">Top Clients (LTV)</h2>
             {stats.topClients.map((c:any, i:number) => (
               <div key={i} className="mb-4 p-4 bg-slate-50 rounded-xl flex justify-between font-bold">
-                <span>{c.nom || "Client"}</span> <span className="text-indigo-600">{Number(c.valeur_estimee).toLocaleString()}€</span>
+                {/* On utilise ici la jointure pour le nom */}
+                <span>{c.contacts ? `${c.contacts.prenom} ${c.contacts.nom}` : (c.nom || "Client")}</span> 
+                <span className="text-indigo-600">{Number(c.valeur_estimee).toLocaleString()}€</span>
               </div>
             ))}
           </div>
