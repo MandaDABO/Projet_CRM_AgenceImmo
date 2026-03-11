@@ -18,7 +18,7 @@ export async function POST(request: Request) {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        sender: { name: "Mon CRM Immo", email: "TON_EMAIL_VALIDE_SUR_BREVO@gmail.com" }, 
+        sender: { name: "Mon CRM Immo", email: "mandadabo590@gmail.com" }, 
         to: [{ email: email, name: nom }],
         subject: sujet,
         htmlContent: `<html><body>${corps}</body></html>`,
